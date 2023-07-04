@@ -1,0 +1,14 @@
+alkana
+Cython
+librosa==0.9.1
+matplotlib
+numpy
+scipy
+tensorboard
+unidecode
+py-cord
+pynacl
+pyopenjtalk
+protobuf
+requests
+tqdm

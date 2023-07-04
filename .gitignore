@@ -1,0 +1,17 @@
+__pycache__
+.env
+notused
+vits/model/*
+wav/*
+img
+Pipfile
+Pipfile.lock
+
+#Editor files
+/.idea/
+.vscode
+
+#OS files
+.DS_Store
+
+!.gitkeep
