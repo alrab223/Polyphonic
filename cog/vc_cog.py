@@ -142,13 +142,13 @@ class VcCommand(commands.Cog, Tts):
       """音声合成を行います"""
       await ctx.respond("音声合成中です", delete_after=3)
       audio, hps = self.tts_setting_free(text, model)
-      write("temp.wav", rate=hps.data.sampling_rate, data=audio)
+      write("wav/temp.wav", rate=hps.data.sampling_rate, data=audio)
       if self.voich.is_playing():
          self.voich.stop()
 
       def delete_wav(c):  # 読み上げ後に削除
-         os.remove("temp.wav")
-      self.voich.play(discord.FFmpegPCMAudio("temp.wav"), after=delete_wav)
+         os.remove("wav/temp.wav")
+      self.voich.play(discord.FFmpegPCMAudio("wav/temp.wav"), after=delete_wav)
       self.voich.source = discord.PCMVolumeTransformer(self.voich.source)
       self.voich.source.volume = 0.5
 
