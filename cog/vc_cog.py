@@ -18,8 +18,6 @@ from vits.text import text_to_sequence
 
 
 class Tts:
-   def __init__(self):
-      pass
 
    def replace_english_kana(self, text):
       temp_text = text
@@ -59,8 +57,8 @@ class Tts:
       user_id = message.author.id
       text = self.read_censorship(message.content)  # 読み上げる一部文字列の変換
       if text != "":  # 文字が入っていれば読み上げ処理
-         f = codecs.open("json/user.json", "r", "utf-8")
-         model = json.load(f)[str(user_id)]
+         with open("json/user.json")as f:
+            model = json.load(f)[str(user_id)]
       else:
          return
       config_path = f"vits/model/{model}/config.json"
@@ -77,11 +75,8 @@ class Tts:
                              noise_scale_w=0.668, length_scale=length_scale)[0][0, 0].data.cpu().float().numpy()
       return audio, hps
 
-   def tts_setting_free(self, text, model, length_scale=1.0):
+   def tts_setting_free(self, text, model):
       text = self.replace_english_kana(text)  # 英語をカタカナに変換
-      with open("json/vits_model_info.json") as f:
-         model_info = json.load(f)
-         model = model_info[model]
       config_path = f"vits/model/{model}/config.json"
       model_path = f"vits/model/{model}/model.pth"
       hps = utils.get_hparams_from_file(config_path)
@@ -93,7 +88,7 @@ class Tts:
          x_tst = stn_tst.cuda().unsqueeze(0)
          x_tst_lengths = torch.LongTensor([stn_tst.size(0)]).cuda()
          audio = net_g.infer(x_tst, x_tst_lengths, noise_scale=0.6,
-                             noise_scale_w=0.668, length_scale=length_scale)[0][0, 0].data.cpu().float().numpy()
+                             noise_scale_w=0.668, length_scale=1.0)[0][0, 0].data.cpu().float().numpy()
       return audio, hps
 
    async def voice_read(self, message):
@@ -119,15 +114,18 @@ class VcCommand(commands.Cog, Tts):
       self.voich = None
 
    def get_model_name(self):
-      with open("json/vits_model_info.json")as f:
-         model_name = json.load(f)
-      return list(model_name.keys())
+      model_path = "vits/model"
+      model_name = []
+      files_dir = [x for x in os.listdir(model_path) if os.path.isdir(os.path.join(model_path, x))]
+      for i in files_dir:
+         model_name.append(i)
+      return model_name
 
    @commands.slash_command(name="botをボイスチャンネルに召喚")
    async def voice_connect(self, ctx):
       """botをボイチャに召喚します"""
       self.voich = await discord.VoiceChannel.connect(ctx.author.voice.channel)
-   
+
    @commands.slash_command(name="読み上げ中止")
    async def stop(self, ctx):
       """読み上げを中止します"""
@@ -157,12 +155,7 @@ class VcCommand(commands.Cog, Tts):
       # ユーザーデータの読み込み
       with open("json/user.json") as f:
          user_data = json.load(f)
-
-      # モデル情報の読み込みとユーザーデータの更新
-      with open("json/vits_model_info.json") as f:
-         model_info = json.load(f)
-         user_data[str(ctx.author.id)] = model_info[model]
-
+      user_data[str(ctx.author.id)]= model
       # ユーザーデータの書き込み
       with open("json/user.json", "w") as f:
          json.dump(user_data, f, indent=3)
