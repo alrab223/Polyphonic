@@ -1,9 +1,27 @@
 {
-   "1031585761457344562": "Oberon_Black",
-   "850681762656944128": "Oberon_Black",
-   "463313030701121537": "Constantinus",
-   "349052901223825408": "Cherino",
-   "472053795598106624": "Rejirai",
-   "465176801124286514": "Nagiko",
-   "495605508858707969": "Rejirai"
+   "1031585761457344562": {
+      "model_name": "Habe",
+      "title": null,
+      "id": null
+   },
+   "465176801124286514": {
+      "model_name": "Nagiko",
+      "title": null,
+      "id": null
+   },
+   "463313030701121537": {
+      "model_name": "Twin Turbo",
+      "title": "Uma",
+      "id": 65
+   },
+   "349052901223825408": {
+      "model_name": "Sakurako",
+      "title": "Blue_Archive",
+      "id": 36
+   },
+   "850681762656944128": {
+      "model_name": "Kotomine",
+      "title": null,
+      "id": null
+   }
 }
