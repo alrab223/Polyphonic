@@ -1,5 +1,4 @@
 import asyncio
-import codecs
 import datetime
 import json
 import os
@@ -91,7 +90,7 @@ class Tts:
       if text != "":  # 文字が入っていれば読み上げ処理
          with open("json/user.json")as f:
             dic = json.load(f)
-            model = dic[str(user_id)]["model_name"]
+            model = dic[str(user_id)]["speaker_name"]
             id = dic[str(user_id)]["id"]
             title = dic[str(user_id)]["title"]
       else:
@@ -100,22 +99,6 @@ class Tts:
          return self.single_voice_make(model, text, length_scale)
       else:
          return self.multi_voice_make(model, id, text, title, length_scale)
-
-   def tts_setting_free(self, text, model):
-      text = self.replace_english_kana(text)  # 英語をカタカナに変換
-      config_path = f"vits/model/{model}/config.json"
-      model_path = f"vits/model/{model}/model.pth"
-      hps = utils.get_hparams_from_file(config_path)
-      net_g = SynthesizerTrn(len(hps.symbols), hps.data.filter_length // 2 + 1, hps.train.segment_size // hps.data.hop_length, n_speakers=hps.data.n_speakers, **hps.model).cuda()
-      net_g.eval()
-      utils.load_checkpoint(model_path, net_g, None)
-      stn_tst = self.get_text(text, hps)
-      with torch.no_grad():
-         x_tst = stn_tst.cuda().unsqueeze(0)
-         x_tst_lengths = torch.LongTensor([stn_tst.size(0)]).cuda()
-         audio = net_g.infer(x_tst, x_tst_lengths, noise_scale=0.6,
-                             noise_scale_w=0.668, length_scale=1.0)[0][0, 0].data.cpu().float().numpy()
-      return audio, hps
 
    async def voice_read(self, message):
       while self.voich.is_playing() is True:
@@ -148,53 +131,8 @@ class VcCommand(commands.Cog, Tts):
          model_name.append(i)
       return model_name
 
-   def ba_get_model_name(self):
-      with open("vits/fusion_model/Blue_Archive/config.json") as f:
-         config = json.load(f)
-      model_name = sorted(config["speaker"])
-      return model_name[0::]
-
-   def ba_get_model_name2(self):
-      with open("vits/fusion_model/Blue_Archive/config.json") as f:
-         config = json.load(f)
-      model_name = sorted(config["speaker"])
-      return model_name[25::]
-
-   def ba_get_model_name3(self):
-      with open("vits/fusion_model/Blue_Archive/config.json") as f:
-         config = json.load(f)
-      model_name = sorted(config["speaker"])
-      return model_name[50::]
-
-   def ba_get_model_name4(self):
-      with open("vits/fusion_model/Blue_Archive/config.json") as f:
-         config = json.load(f)
-      model_name = sorted(config["speaker"])
-      return model_name[75::]
-
-   def uma_get_model_name(self):
-      with open("vits/fusion_model/Uma/config.json") as f:
-         config = json.load(f)
-      model_name = sorted(config["speaker"])
-      return model_name[0::]
-
-   def uma_get_model_name2(self):
-      with open("vits/fusion_model/Uma/config.json") as f:
-         config = json.load(f)
-      model_name = sorted(config["speaker"])
-      return model_name[25::]
-
-   def uma_get_model_name3(self):
-      with open("vits/fusion_model/Uma/config.json") as f:
-         config = json.load(f)
-      model_name = sorted(config["speaker"])
-      return model_name[50::]
-
-   def uma_get_model_name4(self):
-      with open("vits/fusion_model/Uma/config.json") as f:
-         config = json.load(f)
-      model_name = sorted(config["speaker"])
-      return model_name[75::]
+   def get_title_name(self):
+      return ["Blue_Archive", "Uma", "FGO_Female", "FGO_Male"]
 
    @commands.slash_command(name="botをボイスチャンネルに召喚")
    async def voice_connect(self, ctx):
@@ -211,10 +149,28 @@ class VcCommand(commands.Cog, Tts):
          await ctx.respond("読み上げ中ではありません", delete_after=3)
 
    @commands.slash_command(name="音声合成テスト")
-   async def voice_generetor(self, ctx, model: Option(str, "モデルを選択", autocomplete=get_model_name), text: str):
+   async def voice_generetor(self, ctx, model: Option(str, "モデルを選択", autocomplete=get_model_name), text: str, length_scale: float = 1.0):
       """音声合成を行います"""
       await ctx.respond("音声合成中です", delete_after=3)
-      audio, hps = self.tts_setting_free(text, model)
+      audio, hps = self.single_voice_make(model, text, length_scale)
+      write("wav/temp.wav", rate=hps.data.sampling_rate, data=audio)
+      if self.voich.is_playing():
+         self.voich.stop()
+
+      def delete_wav(c):  # 読み上げ後に削除
+         os.remove("wav/temp.wav")
+      self.voich.play(discord.FFmpegPCMAudio("wav/temp.wav"), after=delete_wav)
+      self.voich.source = discord.PCMVolumeTransformer(self.voich.source)
+      self.voich.source.volume = 0.5
+
+   @commands.slash_command(name="複合音声合成テスト")
+   async def fusion_voice_generetor(self, ctx, title: Option(str, "モデルを選択", autocomplete=get_title_name), speaker_id: int, text: str, length_scale: float = 1.0):
+      """音声合成を行います"""
+      await ctx.respond("音声合成中です", delete_after=3)
+      with open(f"vits/fusion_model/{title}/chara.json", encoding="utf-8") as f:
+         dic = json.load(f)
+      speaker_name = [k for k, v in dic.items() if v == speaker_id][0]
+      audio, hps = self.multi_voice_make(speaker_name, speaker_id, text, title, length_scale)
       write("wav/temp.wav", rate=hps.data.sampling_rate, data=audio)
       if self.voich.is_playing():
          self.voich.stop()
@@ -230,74 +186,52 @@ class VcCommand(commands.Cog, Tts):
       # ユーザーデータの読み込み
       with open("json/user.json") as f:
          user_data = json.load(f)
-      user_data[str(ctx.author.id)]["model_name"] = model
+      user_data[str(ctx.author.id)]["speaker_name"] = model
       user_data[str(ctx.author.id)]["id"] = None
       user_data[str(ctx.author.id)]["title"] = None
+      
       # ユーザーデータの書き込み
       with open("json/user.json", "w") as f:
          json.dump(user_data, f, indent=3)
 
       await ctx.respond(f"モデルを{model}に変更しました")
 
-   def json_edit(self, ctx, model, title):
+   def json_edit(self, ctx, title, speeaker_id):
       with open("json/user.json") as f:
          user_data = json.load(f)
-      user_data[str(ctx.author.id)]["model_name"] = model
-      with open(f"vits/fusion_model/{title}/chara.json") as f:
-         chara = json.load(f)
-      user_data[str(ctx.author.id)]["id"] = chara[model]
+      with open(f"vits/fusion_model/{title}/chara.json", encoding="utf-8") as f:
+         dic = json.load(f)
+      speaker_name = [k for k, v in dic.items() if v == speeaker_id][0]
+      user_data[str(ctx.author.id)]["id"] = speeaker_id
       user_data[str(ctx.author.id)]["title"] = title
+      user_data[str(ctx.author.id)]["speaker_name"] = speaker_name
+
       # ユーザーデータの書き込み
       with open("json/user.json", "w") as f:
          json.dump(user_data, f, indent=3)
+      return speaker_name
 
-   @commands.slash_command(name="ブルアカ読み上げモデル")
-   async def ba_model_change(self, ctx, model: Option(str, "モデルを選択", autocomplete=ba_get_model_name)):
-      # ユーザーデータの読み込み
-      self.json_edit(ctx, model, "Blue_Archive")
+   @commands.slash_command(name="複合読み上げモデル変更")
+   async def fusion_model_change(self, ctx, title: Option(str, "タイトルを選択", autocomplete=get_title_name), speeaker_id: int):
+      model = self.json_edit(ctx, title, speeaker_id)
       await ctx.respond(f"モデルを{model}に変更しました")
 
-   @commands.slash_command(name="ブルアカ読み上げモデルii")
-   async def ba_model_change2(self, ctx, model: Option(str, "モデルを選択", autocomplete=ba_get_model_name2)):
-      # ユーザーデータの読み込み
-      self.json_edit(ctx, model, "Blue_Archive")
-      await ctx.respond(f"モデルを{model}に変更しました")
-
-   @commands.slash_command(name="ブルアカ読み上げモデルiii")
-   async def ba_model_change3(self, ctx, model: Option(str, "モデルを選択", autocomplete=ba_get_model_name3)):
-      # ユーザーデータの読み込み
-      self.json_edit(ctx, model, "Blue_Archive")
-      await ctx.respond(f"モデルを{model}に変更しました")
-
-   @commands.slash_command(name="ブルアカ読み上げモデルiv")
-   async def ba_model_change4(self, ctx, model: Option(str, "モデルを選択", autocomplete=ba_get_model_name4)):
-      # ユーザーデータの読み込み
-      self.json_edit(ctx, model, "Blue_Archive")
-      await ctx.respond(f"モデルを{model}に変更しました")
-
-   @commands.slash_command(name="ウマ娘読み上げモデル")
-   async def uma_model_change(self, ctx, model: Option(str, "モデルを選択", autocomplete=uma_get_model_name)):
-      # ユーザーデータの読み込み
-      self.json_edit(ctx, model, "Uma")
-      await ctx.respond(f"モデルを{model}に変更しました")
-
-   @commands.slash_command(name="ウマ娘読み上げモデルii")
-   async def uma_model_change2(self, ctx, model: Option(str, "モデルを選択", autocomplete=uma_get_model_name2)):
-      # ユーザーデータの読み込み
-      self.json_edit(ctx, model, "Uma")
-      await ctx.respond(f"モデルを{model}に変更しました")
-
-   @commands.slash_command(name="ウマ娘読み上げモデルiii")
-   async def uma_model_change3(self, ctx, model: Option(str, "モデルを選択", autocomplete=uma_get_model_name3)):
-      # ユーザーデータの読み込み
-      self.json_edit(ctx, model, "Uma")
-      await ctx.respond(f"モデルを{model}に変更しました")
-
-   @commands.slash_command(name="ウマ娘読み上げモデルiv")
-   async def uma_model_change4(self, ctx, model: Option(str, "モデルを選択", autocomplete=uma_get_model_name4)):
-      # ユーザーデータの読み込み
-      self.json_edit(ctx, model, "Uma")
-      await ctx.respond(f"モデルを{model}に変更しました")
+   @commands.slash_command(name="読み上げモデルのidを確認")
+   async def model_id(self, ctx, title: Option(str, "タイトルを選択", autocomplete=get_title_name)):
+      with open(f"vits/fusion_model/{title}/chara.json", encoding="utf-8") as f:
+         dic = json.load(f)
+      text = []
+      for k, v in dic.items():
+         text.append(f"{k}:{v}")
+      # 三行に分割
+      lists = "```"
+      for num, i in enumerate(text):
+         if num % 2 == 0:
+            lists += i + "\n"
+         else:
+            lists += i + " "
+      lists += "```"
+      await ctx.respond(lists)
 
    @commands.Cog.listener()
    async def on_ready(self):
