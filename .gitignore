@@ -2,8 +2,8 @@ __pycache__
 .env
 .venv
 notused
-vits/model/*
-vits/fusion_model/*
+vits/single_model/*
+vits/multi_model/*
 wav/*
 img
 Pipfile
