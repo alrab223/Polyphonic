@@ -7,7 +7,7 @@ import re
 import alkana
 import discord
 import torch
-from discord.commands import Option
+from discord.commands import option
 from discord.ext import commands
 from scipy.io.wavfile import write
 
@@ -53,8 +53,8 @@ class Tts:
          return text
 
    def single_voice_make(self, model, text, length_scale=1.0):
-      config_path = f"vits/model/{model}/config.json"
-      model_path = f"vits/model/{model}/model.pth"
+      config_path = f"vits/single_model/{model}/config.json"
+      model_path = f"vits/single_model/{model}/model.pth"
       hps = utils.get_hparams_from_file(config_path)
       net_g = SynthesizerTrn(len(hps.symbols), hps.data.filter_length // 2 + 1, hps.train.segment_size // hps.data.hop_length, n_speakers=hps.data.n_speakers, **hps.model).cuda()
       net_g.eval()
@@ -68,8 +68,8 @@ class Tts:
       return audio, hps
 
    def multi_voice_make(self, model, id, text, title, length_scale=1.0):
-      config_path = f"vits/fusion_model/{title}/config.json"
-      model_path = f"vits/fusion_model/{title}/model.pth"
+      config_path = f"vits/multi_model/{title}/config.json"
+      model_path = f"vits/multi_model/{title}/model.pth"
       hps = utils.get_hparams_from_file(config_path)
       model = SynthesizerTrn(len(hps.symbols), hps.data.filter_length // 2 + 1, hps.train.segment_size // hps.data.hop_length, n_speakers=hps.data.n_speakers, **hps.model).cuda()
       utils.load_checkpoint(model_path, model, None)
@@ -95,6 +95,7 @@ class Tts:
             title = dic[str(user_id)]["title"]
       else:
          return
+      # モデルがシングルかマルチかで分岐
       if id is None:
          return self.single_voice_make(model, text, length_scale)
       else:
@@ -123,17 +124,6 @@ class VcCommand(commands.Cog, Tts):
       self.voich = None
       self.ba_flag = 1
 
-   def get_model_name(self, ctx: discord.AutocompleteContext):
-      model_path = "vits/model"
-      model_name = []
-      files_dir = [x for x in os.listdir(model_path) if os.path.isdir(os.path.join(model_path, x))]
-      for i in files_dir:
-         model_name.append(i)
-      return model_name
-
-   def get_title_name(self):
-      return ["Blue_Archive", "Uma", "FGO_Female", "FGO_Male"]
-
    @commands.slash_command(name="botをボイスチャンネルに召喚")
    async def voice_connect(self, ctx):
       """botをボイチャに召喚します"""
@@ -148,90 +138,92 @@ class VcCommand(commands.Cog, Tts):
       else:
          await ctx.respond("読み上げ中ではありません", delete_after=3)
 
-   @commands.slash_command(name="音声合成テスト")
-   async def voice_generetor(self, ctx, model: Option(str, "モデルを選択", autocomplete=get_model_name), text: str, length_scale: float = 1.0):
-      """音声合成を行います"""
-      await ctx.respond("音声合成中です", delete_after=3)
-      audio, hps = self.single_voice_make(model, text, length_scale)
-      write("wav/temp.wav", rate=hps.data.sampling_rate, data=audio)
-      if self.voich.is_playing():
-         self.voich.stop()
+   async def get_title(self, ctx: discord.AutocompleteContext):
+      model_path = "vits/multi_model"
+      title_list = [f for f in os.listdir(model_path) if os.path.isdir(os.path.join(model_path, f))]
+      return [title for title in title_list if ctx.value.lower() in title.lower()]
 
-      def delete_wav(c):  # 読み上げ後に削除
-         os.remove("wav/temp.wav")
-      self.voich.play(discord.FFmpegPCMAudio("wav/temp.wav"), after=delete_wav)
-      self.voich.source = discord.PCMVolumeTransformer(self.voich.source)
-      self.voich.source.volume = 0.5
+   async def get_model_type(self, ctx: discord.AutocompleteContext):
+      model_path = "vits/multi_model"
+      title_list = [f for f in os.listdir(model_path) if os.path.isdir(os.path.join(model_path, f))]
+      title_list.append("single_model")
+      return [title for title in title_list if ctx.value.lower() in title.lower()]
 
-   @commands.slash_command(name="複合音声合成テスト")
-   async def fusion_voice_generetor(self, ctx, title: Option(str, "モデルを選択", autocomplete=get_title_name), speaker_id: int, text: str, length_scale: float = 1.0):
-      """音声合成を行います"""
-      await ctx.respond("音声合成中です", delete_after=3)
-      with open(f"vits/fusion_model/{title}/chara.json", encoding="utf-8") as f:
-         dic = json.load(f)
-      speaker_name = [k for k, v in dic.items() if v == speaker_id][0]
-      audio, hps = self.multi_voice_make(speaker_name, speaker_id, text, title, length_scale)
-      write("wav/temp.wav", rate=hps.data.sampling_rate, data=audio)
-      if self.voich.is_playing():
-         self.voich.stop()
+   async def get_model(self, ctx: discord.AutocompleteContext):
+      if ctx.options["model_type"] == "single_model":
+         model_path = "vits/single_model"
+         model_list = [f for f in os.listdir(model_path) if os.path.isdir(os.path.join(model_path, f))]
+         return [model for model in model_list if ctx.value in model]
+      else:
+         with open(f"vits/multi_model/{ctx.options['model_type']}/chara.json", encoding="utf-8") as f:
+            chara = json.load(f)
+            chara_list = [k for k, v in chara.items()]
+         return [chara for chara in chara_list if ctx.value in chara]
 
-      def delete_wav(c):  # 読み上げ後に削除
-         os.remove("wav/temp.wav")
-      self.voich.play(discord.FFmpegPCMAudio("wav/temp.wav"), after=delete_wav)
-      self.voich.source = discord.PCMVolumeTransformer(self.voich.source)
-      self.voich.source.volume = 0.5
+   async def get_single_model(self, ctx: discord.AutocompleteContext):
+      model_path = "vits/single_model"
+      model_list = [f for f in os.listdir(model_path) if os.path.isdir(os.path.join(model_path, f))]
+      return [model for model in model_list if ctx.value in model]
 
-   @commands.slash_command(name="読み上げモデル変更")
-   async def model_change(self, ctx, model: Option(str, "モデルを選択", autocomplete=get_model_name)):
-      # ユーザーデータの読み込み
+   async def get_multi_model(self, ctx: discord.AutocompleteContext):
+      with open(f"vits/multi_model/{ctx.options['title']}/chara.json", encoding="utf-8") as f:
+         chara = json.load(f)
+      chara_list = [k for k, v in chara.items()]
+
+      return [chara for chara in chara_list if ctx.value in chara]
+
+   def json_edit(self, ctx, title, speaker_name):
       with open("json/user.json") as f:
          user_data = json.load(f)
-      user_data[str(ctx.author.id)]["speaker_name"] = model
-      user_data[str(ctx.author.id)]["id"] = None
-      user_data[str(ctx.author.id)]["title"] = None
-      
-      # ユーザーデータの書き込み
-      with open("json/user.json", "w") as f:
-         json.dump(user_data, f, indent=3)
 
-      await ctx.respond(f"モデルを{model}に変更しました")
-
-   def json_edit(self, ctx, title, speeaker_id):
-      with open("json/user.json") as f:
-         user_data = json.load(f)
-      with open(f"vits/fusion_model/{title}/chara.json", encoding="utf-8") as f:
-         dic = json.load(f)
-      speaker_name = [k for k, v in dic.items() if v == speeaker_id][0]
-      user_data[str(ctx.author.id)]["id"] = speeaker_id
-      user_data[str(ctx.author.id)]["title"] = title
-      user_data[str(ctx.author.id)]["speaker_name"] = speaker_name
+      # シングルモデルかマルチモデルかで分岐
+      if title == "single_model":
+         user_data[str(ctx.author.id)]["id"] = None
+         user_data[str(ctx.author.id)]["title"] = None
+         user_data[str(ctx.author.id)]["speaker_name"] = speaker_name
+      else:
+         with open(f"vits/multi_model/{title}/chara.json", encoding="utf-8") as f:
+            dic = json.load(f)
+         user_data[str(ctx.author.id)]["id"] = dic[speaker_name]
+         user_data[str(ctx.author.id)]["title"] = title
+         user_data[str(ctx.author.id)]["speaker_name"] = speaker_name
 
       # ユーザーデータの書き込み
       with open("json/user.json", "w") as f:
          json.dump(user_data, f, indent=3)
       return speaker_name
 
-   @commands.slash_command(name="複合読み上げモデル変更")
-   async def fusion_model_change(self, ctx, title: Option(str, "タイトルを選択", autocomplete=get_title_name), speeaker_id: int):
-      model = self.json_edit(ctx, title, speeaker_id)
-      await ctx.respond(f"モデルを{model}に変更しました")
+   @commands.slash_command(name="読み上げモデル変更")
+   @option("model_type", description="モデルの種類を選択", autocomplete=get_model_type)
+   @option("speaker_name", description="モデルを選択", autocomplete=get_model)
+   async def multi_model_change(self, ctx, model_type: str, speaker_name: str):
+      self.json_edit(ctx, model_type, speaker_name)
+      await ctx.respond(f"モデルを{speaker_name}に変更しました")
 
-   @commands.slash_command(name="読み上げモデルのidを確認")
-   async def model_id(self, ctx, title: Option(str, "タイトルを選択", autocomplete=get_title_name)):
-      with open(f"vits/fusion_model/{title}/chara.json", encoding="utf-8") as f:
-         dic = json.load(f)
-      text = []
-      for k, v in dic.items():
-         text.append(f"{k}:{v}")
-      # 三行に分割
-      lists = "```"
-      for num, i in enumerate(text):
-         if num % 2 == 0:
-            lists += i + "\n"
-         else:
-            lists += i + " "
-      lists += "```"
-      await ctx.respond(lists)
+   @commands.slash_command(name="朗読")
+   @option("model_type", description="モデルの種類を選択", autocomplete=get_model_type)
+   @option("speaker_name", description="モデルを選択", autocomplete=get_model)
+   async def recitation(self, ctx, model_type, speaker_name, text: str, length_scale: float = 1.0):
+      """朗読を行います"""
+      await ctx.respond("音声合成中です", delete_after=3)
+      
+      if model_type == "single_model":
+         audio, hps = self.single_voice_make(speaker_name, text, length_scale)
+      else:
+         with open(f"vits/multi_model/{model_type}/chara.json", encoding="utf-8") as f:
+            dic = json.load(f)
+         speaker_id = dic[speaker_name]
+         audio, hps = self.multi_voice_make(speaker_name, speaker_id, text, model_type, length_scale)
+      write("wav/temp.wav", rate=hps.data.sampling_rate, data=audio)
+
+      if self.voich.is_playing():
+         self.voich.stop()
+
+      def delete_wav(c):  # 読み上げ後に削除
+         os.remove("wav/temp.wav")
+      self.voich.play(discord.FFmpegPCMAudio("wav/temp.wav"), after=delete_wav)
+      self.voich.source = discord.PCMVolumeTransformer(self.voich.source)
+      self.voich.source.volume = 0.5
 
    @commands.Cog.listener()
    async def on_ready(self):
@@ -243,7 +235,6 @@ class VcCommand(commands.Cog, Tts):
 
    @commands.Cog.listener()
    async def on_message(self, message):
-
       if message.author.bot is False and self.voich is not None and message.channel.id == self.read_ch:
          await self.voice_read(message)
 
