@@ -31,7 +31,7 @@ class Tts:
       output += temp_text
       return output
 
-   def get_text(self, text, hps):
+   def get_text_norm(self, text, hps):
       text_norm = text_to_sequence(text, hps.data.text_cleaners)
       if hps.data.add_blank:
          text_norm = commons.intersperse(text_norm, 0)
@@ -59,7 +59,7 @@ class Tts:
       net_g = SynthesizerTrn(len(hps.symbols), hps.data.filter_length // 2 + 1, hps.train.segment_size // hps.data.hop_length, n_speakers=hps.data.n_speakers, **hps.model).cuda()
       net_g.eval()
       utils.load_checkpoint(model_path, net_g, None)
-      stn_tst = self.get_text(text, hps)
+      stn_tst = self.get_text_norm(text, hps)
       with torch.no_grad():
          x_tst = stn_tst.cuda().unsqueeze(0)
          x_tst_lengths = torch.LongTensor([stn_tst.size(0)]).cuda()
@@ -74,7 +74,7 @@ class Tts:
       model = SynthesizerTrn(len(hps.symbols), hps.data.filter_length // 2 + 1, hps.train.segment_size // hps.data.hop_length, n_speakers=hps.data.n_speakers, **hps.model).cuda()
       utils.load_checkpoint(model_path, model, None)
       net_g = model.eval()
-      stn_tst = self.get_text(text, hps)
+      stn_tst = self.get_text_norm(text, hps)
       sp_id = id
       with torch.no_grad():
          x_tst = stn_tst.cuda().unsqueeze(0)
@@ -138,39 +138,23 @@ class VcCommand(commands.Cog, Tts):
       else:
          await ctx.respond("読み上げ中ではありません", delete_after=3)
 
-   async def get_title(self, ctx: discord.AutocompleteContext):
-      model_path = "vits/multi_model"
-      title_list = [f for f in os.listdir(model_path) if os.path.isdir(os.path.join(model_path, f))]
-      return [title for title in title_list if ctx.value.lower() in title.lower()]
-
    async def get_model_type(self, ctx: discord.AutocompleteContext):
       model_path = "vits/multi_model"
       title_list = [f for f in os.listdir(model_path) if os.path.isdir(os.path.join(model_path, f))]
       title_list.append("single_model")
+      title_list.sort()
       return [title for title in title_list if ctx.value.lower() in title.lower()]
 
    async def get_model(self, ctx: discord.AutocompleteContext):
       if ctx.options["model_type"] == "single_model":
          model_path = "vits/single_model"
-         model_list = [f for f in os.listdir(model_path) if os.path.isdir(os.path.join(model_path, f))]
+         model_list = sorted([f for f in os.listdir(model_path) if os.path.isdir(os.path.join(model_path, f))])
          return [model for model in model_list if ctx.value in model]
       else:
          with open(f"vits/multi_model/{ctx.options['model_type']}/chara.json", encoding="utf-8") as f:
             chara = json.load(f)
-            chara_list = [k for k, v in chara.items()]
+            chara_list = sorted([k for k, v in chara.items()])
          return [chara for chara in chara_list if ctx.value in chara]
-
-   async def get_single_model(self, ctx: discord.AutocompleteContext):
-      model_path = "vits/single_model"
-      model_list = [f for f in os.listdir(model_path) if os.path.isdir(os.path.join(model_path, f))]
-      return [model for model in model_list if ctx.value in model]
-
-   async def get_multi_model(self, ctx: discord.AutocompleteContext):
-      with open(f"vits/multi_model/{ctx.options['title']}/chara.json", encoding="utf-8") as f:
-         chara = json.load(f)
-      chara_list = [k for k, v in chara.items()]
-
-      return [chara for chara in chara_list if ctx.value in chara]
 
    def json_edit(self, ctx, title, speaker_name):
       with open("json/user.json") as f:
@@ -206,7 +190,7 @@ class VcCommand(commands.Cog, Tts):
    async def recitation(self, ctx, model_type, speaker_name, text: str, length_scale: float = 1.0):
       """朗読を行います"""
       await ctx.respond("音声合成中です", delete_after=3)
-      
+
       if model_type == "single_model":
          audio, hps = self.single_voice_make(speaker_name, text, length_scale)
       else:
